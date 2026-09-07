@@ -925,7 +925,7 @@ const Rank = {
     opt = opt || {};
     opt.headers = Object.assign({ "Authorization": "Bearer " + this.KEY }, opt.headers || {});
     return fetch("https://" + this.ENV + ".api.tcloudbasegateway.com/v1/rdb/rest/" + this.COL + path, opt)
-      .then(r => { if (!r.ok) throw new Error("http " + r.status); return r.status === 204 ? null : r.json(); });
+      .then(async r => { if (!r.ok) throw new Error("http " + r.status); const t = await r.text(); return t ? JSON.parse(t) : null; });
   },
   name() { return localStorage.getItem("neon_name") || ""; },
   setName(n) { localStorage.setItem("neon_name", n); },
