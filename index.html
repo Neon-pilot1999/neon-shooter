@@ -762,7 +762,7 @@ window.addEventListener("keyup", e => { keys[e.code] = false; });
 
 /* 移动端：手指跟随控制（飞机悬在手指上方，不挡视野） */
 const joy = { active: false, id: -1, bx: 0, by: 0, dx: 0, dy: 0 };
-const TOUCH_OFFSET = 78;   // 飞机相对手指的上移距离
+const TOUCH_OFFSET = 44;   // 飞机相对手指的上移距离（贴近手指但不挡机头）
 let dragId = -1;
 let lastCanvasTap = 0;
 function fingerAim(t) {
