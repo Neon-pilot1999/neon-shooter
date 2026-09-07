@@ -917,7 +917,7 @@ function buildStats() {
 }
 /* ================= 排行榜（腾讯云开发 CloudBase，可插拔） ================= */
 const Rank = {
-  ENV: "",            // 云开发环境 ID：填入后自动启用在线榜，留空走本机榜
+  ENV: "neon-rank-d6gd4atra7cee31c1",   // 云开发环境 ID：填入后自动启用在线榜，留空走本机榜
   COL: "scores",
   app: null, db: null, ready: false,
   name() { return localStorage.getItem("neon_name") || ""; },
