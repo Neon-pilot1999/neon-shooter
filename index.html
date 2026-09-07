@@ -2,13 +2,18 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#030510">
 <title>霓虹深空 · 打飞机</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   html,body { width:100%; height:100%; overflow:hidden; background:#030510;
     font-family:"Segoe UI","Microsoft YaHei",sans-serif; -webkit-user-select:none; user-select:none;
-    touch-action:none; }
+    touch-action:none; position:fixed; inset:0;
+    -webkit-tap-highlight-color:transparent; -webkit-touch-callout:none; }
   #game { display:block; position:absolute; inset:0; }
   .overlay { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center;
     justify-content:center; background:rgba(3,5,16,.78); backdrop-filter:blur(4px); z-index:10;
@@ -45,6 +50,13 @@
     color:#e3c2ff; text-shadow:0 0 8px #90f; }
   #btnBomb { right:104px; bottom:30px; }
   #btnUlt { bottom:30px; right:22px; }
+  /* iPhone 安全区适配：避开底部 Home 指示条与顶部刘海 */
+  #btnUlt { bottom:calc(30px + env(safe-area-inset-bottom, 0px)); right:calc(22px + env(safe-area-inset-right, 0px)); }
+  #btnBomb { bottom:calc(30px + env(safe-area-inset-bottom, 0px)); right:calc(104px + env(safe-area-inset-right, 0px)); }
+  #btnPause { top:calc(10px + env(safe-area-inset-top, 0px)); right:calc(12px + env(safe-area-inset-right, 0px));
+    width:46px; height:46px; font-size:16px; border-color:rgba(159,216,255,.6);
+    background:rgba(159,216,255,.12); color:#cfeaff; text-shadow:0 0 8px #3ff3ff; }
+  #planeCards, #luCards { -webkit-overflow-scrolling:touch; }
   @media (pointer:coarse) { #touchUI { display:block; } }
   /* 选机面板 */
   #planePanel .ptitle { font-size:clamp(26px,5vw,44px); font-weight:800; letter-spacing:.14em; color:#3ff3ff;
@@ -100,12 +112,13 @@
   <div id="joyKnob"></div>
   <div class="tbtn" id="btnUlt">大招<br>X</div>
   <div class="tbtn" id="btnBomb">炸弹<br>SPACE</div>
+  <div class="tbtn" id="btnPause">Ⅱ</div>
 </div>
 
 <div class="overlay" id="menuPanel">
   <div class="title">霓虹深空</div>
   <div class="sub">
-    五架战机五种玩法：散射 / 狙击 / 重炮 / 闪电链，各有专属大招 · 鼠标移动操控 · 自动射击<br>
+    五架战机五种玩法：散射 / 狙击 / 重炮 / 闪电链，各有专属大招 · 鼠标移动 / 手指滑动操控 · 自动射击<br>
     击杀攒经验，<b>升级三选一强化卡</b>，构筑你的流派 · 连杀涨倍率，擦弹攒能量<br>
     <b>空格</b> 炸弹 · <b>X</b> 专属大招（能量100） · <b>C</b> 合成超级技能 · <b>Shift</b> 瞬移（幽灵刺客） · <b>P/Esc</b> 暂停 · <b>M</b> 静音<br>
     拾取道具解锁 <b>激光炮（10级）</b> · <b>僚机</b> · <b>磁铁</b> 等技能 · BOSS 掉<b>合成核心</b>，两两合成 <b>5 种超级技能</b><br>
@@ -742,11 +755,15 @@ function tryFuse() {
 }
 window.addEventListener("keyup", e => { keys[e.code] = false; });
 
-/* 移动端虚拟摇杆 */
+/* 移动端：手指跟随控制（飞机悬在手指上方，不挡视野） */
 const joy = { active: false, id: -1, bx: 0, by: 0, dx: 0, dy: 0 };
-const joyBase = document.getElementById("joyBase");
-const joyKnob = document.getElementById("joyKnob");
+const TOUCH_OFFSET = 78;   // 飞机相对手指的上移距离
+let dragId = -1;
 let lastCanvasTap = 0;
+function fingerAim(t) {
+  player.tx = clamp(t.clientX, 20, W - 20);
+  player.ty = clamp(t.clientY - TOUCH_OFFSET, H * 0.25, H - 30);
+}
 canvas.addEventListener("touchstart", e => {
   Sound.init();
   for (const t of e.changedTouches) {
@@ -756,39 +773,26 @@ canvas.addEventListener("touchstart", e => {
       if (now - lastCanvasTap < 300) { lastCanvasTap = 0; useDash(); e.preventDefault(); return; }
       lastCanvasTap = now;
     }
-    if (t.clientX < W * 0.6 && !joy.active) {
-      joy.active = true; joy.id = t.identifier;
-      joy.bx = t.clientX; joy.by = t.clientY; joy.dx = 0; joy.dy = 0;
-      joyBase.style.display = joyKnob.style.display = "block";
-      joyBase.style.left = (joy.bx - 55) + "px"; joyBase.style.top = (joy.by - 55) + "px";
-      joyKnob.style.left = (joy.bx - 24) + "px"; joyKnob.style.top = (joy.by - 24) + "px";
+    if (dragId === -1 && G.state === "playing") {
+      dragId = t.identifier;
+      fingerAim(t);
     }
   }
   e.preventDefault();
 }, { passive: false });
 canvas.addEventListener("touchmove", e => {
   for (const t of e.changedTouches) {
-    if (joy.active && t.identifier === joy.id) {
-      const dx = t.clientX - joy.bx, dy = t.clientY - joy.by;
-      const d = Math.hypot(dx, dy), max = 46;
-      const k = d > max ? max / d : 1;
-      joy.dx = dx * k; joy.dy = dy * k;
-      joyKnob.style.left = (joy.bx + joy.dx - 24) + "px";
-      joyKnob.style.top = (joy.by + joy.dy - 24) + "px";
-    }
+    if (t.identifier === dragId) fingerAim(t);
   }
   e.preventDefault();
 }, { passive: false });
-function joyEnd(e) {
+function dragEnd(e) {
   for (const t of e.changedTouches) {
-    if (joy.active && t.identifier === joy.id) {
-      joy.active = false; joy.dx = joy.dy = 0;
-      joyBase.style.display = joyKnob.style.display = "none";
-    }
+    if (t.identifier === dragId) dragId = -1;
   }
 }
-canvas.addEventListener("touchend", joyEnd);
-canvas.addEventListener("touchcancel", joyEnd);
+canvas.addEventListener("touchend", dragEnd);
+canvas.addEventListener("touchcancel", dragEnd);
 let lastUltTap = 0;
 document.getElementById("btnUlt").addEventListener("touchstart", e => {
   e.preventDefault();
@@ -800,6 +804,16 @@ document.getElementById("btnUlt").addEventListener("touchstart", e => {
   useUlt();
 }, { passive: false });
 document.getElementById("btnBomb").addEventListener("touchstart", e => { e.preventDefault(); if (G.state === "playing") useBomb(); }, { passive: false });
+document.getElementById("btnPause").addEventListener("touchstart", e => {
+  e.preventDefault();
+  if (G.state === "playing") pauseGame();
+  else if (G.state === "paused") resumeGame();
+}, { passive: false });
+// iPhone：屏蔽长按弹出菜单/手势冲突
+window.addEventListener("contextmenu", e => e.preventDefault());
+// iPhone：横竖屏旋转/地址栏收起后重新适配画布
+window.addEventListener("orientationchange", () => setTimeout(resize, 120));
+if (window.visualViewport) window.visualViewport.addEventListener("resize", resize);
 
 /* ================= 面板 ================= */
 const panels = {
@@ -1501,11 +1515,8 @@ function update(dt) {
     const m = Math.hypot(kx, ky);
     player.tx = clamp(player.x + kx / m * spd * dt * 1.4, 20, W - 20);
     player.ty = clamp(player.y + ky / m * spd * dt * 1.4, H * 0.25, H - 30);
-  } else if (joy.active && (joy.dx || joy.dy)) {
-    player.tx = clamp(player.x + joy.dx * 6, 20, W - 20);
-    player.ty = clamp(player.y + joy.dy * 6, H * 0.25, H - 30);
   }
-  // 鼠标平滑跟随（缓动系数约 14）
+  // 鼠标/手指平滑跟随（缓动系数约 14）
   const ease = Math.min(1, 14 * dt);
   player.x += (player.tx - player.x) * ease;
   player.y += (player.ty - player.y) * ease;
