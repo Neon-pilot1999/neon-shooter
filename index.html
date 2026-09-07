@@ -919,7 +919,14 @@ function buildStats() {
 const Rank = {
   ENV: "neon-rank-d6gd4atra7cee31c1",   // 云开发环境 ID：填入后自动启用在线榜，留空走本机榜
   COL: "scores",
-  app: null, db: null, ready: false,
+  KEY: "eyJhbGciOiJSUzI1NiIsImtpZCI6IjRkOGNiY2U2LTJhNzctNDIyZC1hZjExLWFiODFmMDU2NzliMyJ9.eyJpc3MiOiJodHRwczovL25lb24tcmFuay1kNmdkNGF0cmE3Y2VlMzFjMS5hcC1zaGFuZ2hhaS50Y2ItYXBpLnRlbmNlbnRjbG91ZGFwaS5jb20iLCJzdWIiOiJhbm9uIiwiYXVkIjoibmVvbi1yYW5rLWQ2Z2Q0YXRyYTdjZWUzMWMxIiwiZXhwIjo0MDkyNDQwOTYxLCJpYXQiOjE3ODg3NTc3NjEsIm5vbmNlIjoiUEQ0aDRvVDlSZFM4X3pQN2F6dURLUSIsImF0X2hhc2giOiJQRDRoNG9UOVJkUzhfelA3YXp1REtRIiwibmFtZSI6IkFub255bW91cyIsInNjb3BlIjoiYW5vbnltb3VzIiwicHJvamVjdF9pZCI6Im5lb24tcmFuay1kNmdkNGF0cmE3Y2VlMzFjMSIsIm1ldGEiOnsicGxhdGZvcm0iOiJQdWJsaXNoYWJsZUtleSJ9LCJyb2xlIjoiYW5vbiIsImlzX2Fub255bW91cyI6dHJ1ZSwiYXBwX21ldGFkYXRhIjp7InByb3ZpZGVyIjoiYW5vbnltb3VzIiwicHJvdmlkZXJzIjpbImFub255bW91cyJdfSwidXNlcl9tZXRhZGF0YSI6eyJuYW1lIjoiQW5vbnltb3VzIn0sInVzZXJfdHlwZSI6IiIsImNsaWVudF90eXBlIjoiY2xpZW50X3VzZXIiLCJpc19zeXN0ZW1fYWRtaW4iOmZhbHNlfQ.KBUuxBXbJxfvFQYPyCkdaXL3xAjo6uBlokpsFkV3106hfLG6sJIaqwdoeEUBdzTf3SHbI2fjiRVvVroCgD9BcyfRNpE06P_rX4i4YAzw4KJD5R3rUQUHz9iuvNyZZd4g1Zoei_LRHPjameo1Lflvd42epna_Ul7Tpmvg3kRYcw6nLnujojWEpiPjY6XjQYd9Yi5UglBJpTHYwY_Haki6ZU-Sy1lO8WgoQICvW9ombU85XLSAYNmqQd1vhYKhySZblMtSq6FEgP1VmfuhSZyngwRRKwCbnipvLMoXV5tS2nSCw0V1u9PxlHqSE5lNPOigOyPmkLDxPSdsxgF6nE1SQQ",   // 腾讯云开发 Publishable Key（anon 匿名角色，仅可读写排行榜，可公开）
+  ready: false,
+  api(path, opt) {   // CloudBase 2.0 PostgreSQL REST（PostgREST）
+    opt = opt || {};
+    opt.headers = Object.assign({ "Authorization": "Bearer " + this.KEY }, opt.headers || {});
+    return fetch("https://" + this.ENV + ".api.tcloudbasegateway.com/v1/rdb/rest/" + this.COL + path, opt)
+      .then(r => { if (!r.ok) throw new Error("http " + r.status); return r.status === 204 ? null : r.json(); });
+  },
   name() { return localStorage.getItem("neon_name") || ""; },
   setName(n) { localStorage.setItem("neon_name", n); },
   esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); },
@@ -943,41 +950,29 @@ const Rank = {
   },
   sane(e) { return e.level >= 1 && e.level <= 11 && e.score >= 0 && e.score <= 8000000 && e.timeSec >= 8; },
   async init() {
-    if (!this.ENV || this.ready) return this.ready;
-    if (typeof cloudbase === "undefined") {
-      await new Promise((res, rej) => {
-        const s = document.createElement("script");
-        s.src = "https://imgcache.qq.com/qcloud/cloudbase-js-sdk/1.9.3/cloudbase.full.js";
-        s.onload = res; s.onerror = rej; document.body.appendChild(s);
-      }).catch(() => {});
-    }
-    if (typeof cloudbase === "undefined") return false;
-    try {
-      this.app = cloudbase.init({ env: this.ENV });
-      const auth = this.app.auth({ persistence: "local" });
-      await auth.anonymousAuthProvider().signIn();
-      this.db = this.app.database();
-      this.ready = true;
-    } catch (e) { this.ready = false; }
+    if (!this.ENV || !this.KEY || this.ready) return this.ready;
+    try { await this.api("?select=name&limit=1"); this.ready = true; }
+    catch (e) { this.ready = false; }
     return this.ready;
   },
   async fetchAll() {
-    const res = await this.db.collection(this.COL).limit(100).get();
-    return (res && res.data) || [];
+    const rows = await this.api("?select=name,score,level,plane,s,a,b,c,timeSec,ts&limit=500");
+    return rows || [];
   },
   async submit(e) {
     if (!this.sane(e)) return { online: false };
     if (!await this.init()) return { online: false };
     try {
-      const q = await this.db.collection(this.COL).where({ name: e.name }).get();
-      const docs = (q && q.data) || [];
+      const q = await this.api("?name=eq." + encodeURIComponent(e.name) + "&select=name,score,level,timeSec");
       let mine = null;
-      for (const d of docs) if (!mine || this.better(d, mine)) mine = d;
+      for (const d of (q || [])) if (!mine || this.better(d, mine)) mine = d;
+      const body = JSON.stringify({ name: e.name, score: e.score, level: e.level, plane: e.plane,
+        s: e.s, a: e.a, b: e.b, c: e.c, timeSec: e.timeSec, ts: e.ts });
+      const opt = { headers: { "Content-Type": "application/json", "Prefer": "return=minimal" }, body: body };
       if (mine && this.better(e, mine)) {
-        await this.db.collection(this.COL).doc(mine._id).update({
-          score: e.score, level: e.level, plane: e.plane, s: e.s, a: e.a, b: e.b, c: e.c, timeSec: e.timeSec, ts: e.ts });
+        await this.api("?name=eq." + encodeURIComponent(e.name), Object.assign({ method: "PATCH" }, opt));
       } else if (!mine) {
-        await this.db.collection(this.COL).add(e);
+        await this.api("", Object.assign({ method: "POST" }, opt));
       }
       const all = await this.fetchAll();
       all.sort((x, y) => this.better(x, y) ? -1 : 1);
