@@ -471,7 +471,7 @@ const PERM_ITEMS = [
 const PERM_CAP = { pfire: 99, prapid: 99, pagility: 99, ptri: 1, laser: 10, wing: 2, magnet: 1 };
 /* 激光：等级 -> 折射次数 / 伤害倍率 / 光束宽度 */
 const LASER_BOUNCE = [0, 0, 1, 3, 999, 999, 999, 999, 999, 999, 999];
-const LASER_MULT   = [0, 1, 1, 1, 1, 1.5, 2, 3, 4, 6, 10];  // Lv10 = 10 倍
+const LASER_MULT   = [0, 1, 1, 1, 1, 1.5, 2, 2.5, 3, 4, 5];  // Lv10 = 5 倍（收益递减，6 级起压缩）
 const LASER_WIDTH  = [0, 6, 6, 7, 8, 10, 12, 15, 18, 22, 28]; // Lv10 超宽光束
 
 /* 合成核心道具 */
@@ -1085,18 +1085,28 @@ function spawnEnemy() {
       score: 150, t: 0, shootT: 999 });
   } else {
     const hp = Math.round((260 + lv * 65 + lv * lv * 10) * grow);
-    enemies.push({ type: "elite", x: x, y: -70, hp: hp, maxHp: hp,
+    const el = { type: "elite", x: x, y: -70, hp: hp, maxHp: hp,
       w: 62, h: 60, vy: 85, hoverY: rand(90, 170), swayA: rand(0, TAU),
-      score: 600, t: 0, shootT: rand(0.7, 1.3) });
+      score: 600, t: 0, shootT: rand(0.7, 1.3), shield: 0, armor: 0 };
+    if (lv >= 7) {   // 7 关起精英带装甲（单次受伤最多 8%），40% 概率额外带能量盾
+      el.armor = 0.08;
+      if (Math.random() < 0.4) el.shield = Math.round(hp * 0.4);
+    }
+    enemies.push(el);
   }
 }
 
 function spawnEliteAt(x) {
   const lv = G.level;
   const hp = Math.round((260 + lv * 65 + lv * lv * 10) * (1 + 0.22 * (lv - 1)));
-  enemies.push({ type: "elite", x: x, y: -70, hp: hp, maxHp: hp,
+  const el = { type: "elite", x: x, y: -70, hp: hp, maxHp: hp,
     w: 62, h: 60, vy: 85, hoverY: rand(90, 170), swayA: rand(0, TAU),
-    score: 600, t: 0, shootT: rand(0.7, 1.3) });
+    score: 600, t: 0, shootT: rand(0.7, 1.3), shield: 0, armor: 0 };
+  if (lv >= 7) {
+    el.armor = 0.08;
+    if (Math.random() < 0.4) el.shield = Math.round(hp * 0.4);
+  }
+  enemies.push(el);
 }
 
 /* 关卡事件：精英卫队 / 道具雨 / 交叉突袭 / 闪电风暴 */
@@ -1151,7 +1161,8 @@ function spawnBoss() {
     hp: cfg.hp, maxHp: cfg.hp,
     x: W / 2, y: -160, targetY: H * 0.16, w: w, h: w * ratio,
     t: 0, fireT: 1.2, skillT: 2.2, skill2Idx: 0, phaseT: 0, state: "enter",
-    dashVx: 0, mixIdx: 0, swayA: 0, enraged: false
+    dashVx: 0, mixIdx: 0, swayA: 0, enraged: false,
+    stage: 0, fightT: 0, overdriven: false
   };
   G.phase = "boss";
 }
@@ -1343,6 +1354,7 @@ function startWarning() {
 
 function damageBoss(d) {
   if (!boss) return;
+  d = Math.min(d, Math.max(1, Math.round(boss.maxHp * 0.05)));   // BOSS 装甲：单次受伤最多 5%
   boss.hp -= d;
   if (boss.hp <= 0 && boss.state !== "dying") {
     boss.state = "dying";
@@ -1397,9 +1409,13 @@ function applyItem(it) {
 }
 
 /* ================= 玩家武器 ================= */
+/* 火力强化收益递减：前 5 级 +8，6~10 级 +5，10 级以上 +3 */
+function pfireBonus(n) {
+  return 8 * Math.min(n, 5) + 5 * Math.min(Math.max(n - 5, 0), 5) + 3 * Math.max(n - 10, 0);
+}
 function playerDamage() {
   const plane = PLANES[G.planeIdx];
-  let d = (10 + G.perm.pfire * 8) * plane.fire;
+  let d = (10 + pfireBonus(G.perm.pfire)) * plane.fire;
   if (plane.skill === "dash") d *= 2.2;          // 幽灵刺客：狙击高伤
   if (G.timed.rage) d *= 1.25;
   d *= Math.min(G.mods.dmg, 2.0);   // 卡牌增伤软上限 ×2.0
@@ -1500,11 +1516,25 @@ function fireBullets(dt) {
   }
 }
 
+/* 命中结算：能量盾优先扣盾（溢出进本体），装甲限制单次受伤上限 */
+function applyHit(e, dmg) {
+  if (e.shield > 0) {
+    e.shield -= dmg;
+    addParticles(e.x, e.y, 3, ["#7fd0ff", "#3ff3ff"], 120);
+    if (e.shield > 0) return 0;
+    dmg = -e.shield; e.shield = 0;
+    popup(e.x, e.y - e.h * 0.6, "破盾!", "#7fd0ff");
+  }
+  if (e.armor) dmg = Math.min(dmg, Math.max(1, Math.round(e.maxHp * e.armor)));
+  e.hp -= dmg;
+  return dmg;
+}
+
 /* 通用敌机伤害（激光折射用）：安全处理死亡/掉落/切关 */
 function damageEnemy(e, dmg) {
   const idx = enemies.indexOf(e);
   if (idx === -1) return;
-  e.hp -= dmg;
+  applyHit(e, dmg);
   addParticles(e.x, e.y - e.h * 0.4, 3, ["#fff", "#7fd0ff"], 110);
   if (e.hp <= 0) {
     addScore(e.score, e.x, e.y);
@@ -1765,6 +1795,7 @@ function update(dt) {
       e.x += e.vx * edt + Math.sin(e.t * 5 + e.swayA) * 40 * edt;
     } else { // elite
       if (e.y < e.hoverY) e.y += e.vy * edt;
+      else if (G.level >= 6) e.x += Math.sin(e.t * 2.2 + e.swayA) * 110 * edt;   // 6 关起：机动闪避增强
       else e.x += Math.sin(e.t * 1.5 + e.swayA) * 60 * edt;
       e.shootT -= edt;
       if (e.shootT <= 0 && e.y > 0) {
@@ -1807,7 +1838,7 @@ function update(dt) {
       const e = enemies[j];
       if (b.hit.indexOf(e) !== -1) continue;
       if (Math.abs(b.x - e.x) < e.w * 0.5 + 4 && Math.abs(b.y - e.y) < e.h * 0.5 + 6) {
-        e.hp -= b.dmg;
+        applyHit(e, b.dmg);
         const planeSkill = PLANES[G.planeIdx].skill;
         // 重装泰坦：重炮击退（停顿 0.1s）
         if (planeSkill === "titan") e.stunT = Math.max(e.stunT || 0, 0.1);
@@ -2088,8 +2119,29 @@ function updateBoss(dt) {
     Sound.warn();
     G.shake = Math.max(G.shake, 0.5);
   }
-  const rageF = b.enraged ? 0.55 : 1;
-  const rageS = b.enraged ? 1.35 : 1;
+  // 阶段化：血量跌破 75% / 50% / 25% 各换一次攻击模式
+  if (b.state === "fight") {
+    b.fightT += dt;
+    const thr = [0.75, 0.5, 0.25];
+    if (b.stage < 3 && b.hp < b.maxHp * thr[b.stage]) {
+      b.stage++;
+      const rot = ["fan", "aimed3", "ring", "rapid", "homing", "turrets"];
+      let np = rot[Math.floor(Math.random() * rot.length)];
+      if (np === b.pattern) np = rot[(rot.indexOf(np) + 1) % rot.length];
+      b.pattern = np; b.fireT = 1.2; b.phaseT = 0;
+      popup(W / 2, H * 0.3, "⚠ BOSS 变招！", "#ff9d3f");
+      Sound.warn();
+    }
+    // 软狂暴：战斗超过 90 秒，弹幕速度/密度持续上涨（DPS 检验）
+    if (!b.overdriven && b.fightT > 90) {
+      b.overdriven = true;
+      popup(W / 2, H * 0.36, "⚠ BOSS 超载！弹幕加速 ⚠", "#ff3f3f");
+      Sound.warn();
+    }
+  }
+  const od = b.overdriven ? Math.min(2, 1 + (b.fightT - 90) / 60) : 1;   // 超载倍率，最多 ×2
+  const rageF = (b.enraged ? 0.55 : 1) / od;
+  const rageS = (b.enraged ? 1.35 : 1) * od;
 
   b.fireT -= dt * 1.18;   // 难度上调：BOSS 出手整体加快 18%
   const lv = G.level;
@@ -2350,6 +2402,16 @@ function render() {
       ctx.fillRect(e.x - 26, e.y - e.h / 2 - 10, 52, 5);
       ctx.fillStyle = "#c07bff";
       ctx.fillRect(e.x - 26, e.y - e.h / 2 - 10, 52 * e.hp / e.maxHp, 5);
+    }
+    // 能量盾：青色光环（装甲精英带紫边标记）
+    if (e.shield > 0) {
+      ctx.strokeStyle = "rgba(63,243,255," + (0.55 + 0.3 * Math.sin(Date.now() / 120)) + ")";
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(e.x, e.y, e.w * 0.68, 0, TAU); ctx.stroke();
+    } else if (e.armor) {
+      ctx.strokeStyle = "rgba(192,123,255,.5)";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(e.x, e.y, e.w * 0.62, 0, TAU); ctx.stroke();
     }
   }
 
