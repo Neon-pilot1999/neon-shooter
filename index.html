@@ -436,16 +436,16 @@ const Music = {
 /* ================= BOSS 配置 ================= */
 const BOSSES = [
   null,
-  { name: "尿布战神",   hp: 16000,  img: "boss1",  pattern: "fan",       skill2: "rain" },
-  { name: "烈焰轰炸机", hp: 47000,  img: "boss2",  pattern: "aimed3",    skill2: "ringS" },
-  { name: "赤红队长",   hp: 80000,  img: "boss3",  pattern: "ring",      skill2: "aimed3s" },
-  { name: "冰霜护卫舰", hp: 130000, img: "boss4",  pattern: "rapid",     skill2: "cross" },
-  { name: "紫电电磁",   hp: 210000, img: "boss5",  pattern: "dash",      skill2: "homingS" },
-  { name: "黄金堡垒",   hp: 325000, img: "boss6",  pattern: "lightning", skill2: "ringS" },
-  { name: "暗影刺客",   hp: 500000, img: "boss7",  pattern: "lava",      skill2: "summon" },
-  { name: "熔岩巨兽",   hp: 780000, img: "boss8",  pattern: "homing",    skill2: "fanS" },
-  { name: "虚空领主",   hp: 1180000, img: "boss9", pattern: "turrets",   skill2: "summon" },
-  { name: "终极母舰",   hp: 1800000, img: "boss10", pattern: "mixed",    skill2: "rotate" }
+  { name: "尿布战神",   hp: 22000,  img: "boss1",  pattern: "fan",       skill2: "rain" },
+  { name: "烈焰轰炸机", hp: 75000,  img: "boss2",  pattern: "aimed3",    skill2: "walls" },
+  { name: "赤红队长",   hp: 130000, img: "boss3",  pattern: "ring",      skill2: "aimedBurst" },
+  { name: "冰霜护卫舰", hp: 210000, img: "boss4",  pattern: "rapid",     skill2: "spiral" },
+  { name: "紫电电磁",   hp: 340000, img: "boss5",  pattern: "dash",      skill2: "homingS" },
+  { name: "黄金堡垒",   hp: 530000, img: "boss6",  pattern: "lightning", skill2: "walls" },
+  { name: "暗影刺客",   hp: 820000, img: "boss7",  pattern: "lava",      skill2: "summon" },
+  { name: "熔岩巨兽",   hp: 1280000, img: "boss8", pattern: "homing",    skill2: "spiral" },
+  { name: "虚空领主",   hp: 1950000, img: "boss9", pattern: "turrets",   skill2: "walls" },
+  { name: "终极母舰",   hp: 3000000, img: "boss10", pattern: "mixed",    skill2: "rotate" }
 ];
 
 /* 道具定义：timed=限时技能 perm=永久技能 */
@@ -1162,7 +1162,7 @@ function spawnBoss() {
     x: W / 2, y: -160, targetY: H * 0.16, w: w, h: w * ratio,
     t: 0, fireT: 1.2, skillT: 2.2, skill2Idx: 0, phaseT: 0, state: "enter",
     dashVx: 0, mixIdx: 0, swayA: 0, enraged: false,
-    stage: 0, fightT: 0, overdriven: false
+    stage: 0, fightT: 0, overdriven: false, skill3T: 1.0, spiralA: 0
   };
   G.phase = "boss";
 }
@@ -2112,12 +2112,12 @@ function updateBoss(dt) {
   b.swayA += dt;
   b.x = clamp(b.x + Math.sin(b.swayA * 1.1) * 75 * dt, b.w / 2, W - b.w / 2);
 
-  // BOSS 狂暴：血量低于 30% 触发一次，射速 +54%、弹速 +25%
-  if (!b.enraged && b.hp < b.maxHp * 0.35) {
+  // BOSS 狂暴：血量低于 30% 触发一次，射速 ×2.2、弹速 +50%，并解锁狂暴专属螺旋压制
+  if (!b.enraged && b.hp < b.maxHp * 0.30) {
     b.enraged = true;
-    popup(W / 2, H * 0.3, "⚠ BOSS 狂暴！⚠", "#ff3f3f");
+    popup(W / 2, H * 0.3, "⚠ BOSS 狂暴！螺旋压制启动 ⚠", "#ff3f3f");
     Sound.warn();
-    G.shake = Math.max(G.shake, 0.5);
+    G.shake = Math.max(G.shake, 0.8);
   }
   // 阶段化：血量跌破 75% / 50% / 25% 各换一次攻击模式
   if (b.state === "fight") {
@@ -2140,8 +2140,8 @@ function updateBoss(dt) {
     }
   }
   const od = b.overdriven ? Math.min(2, 1 + (b.fightT - 90) / 60) : 1;   // 超载倍率，最多 ×2
-  const rageF = (b.enraged ? 0.55 : 1) / od;
-  const rageS = (b.enraged ? 1.35 : 1) * od;
+  const rageF = (b.enraged ? 0.45 : 1) / od;   // 狂暴射速 ×2.2
+  const rageS = (b.enraged ? 1.5 : 1) * od;    // 狂暴弹速 +50%
 
   b.fireT -= dt * 1.18;   // 难度上调：BOSS 出手整体加快 18%
   const lv = G.level;
@@ -2236,7 +2236,7 @@ function updateBoss(dt) {
   if (b.skillT <= 0 && b.state === "fight") {
     const s2haste = rageF * (lv >= 7 ? 0.85 : 1);   // 7 关起第二技能冷却 -15%
     let s2 = b.skill2;
-    if (s2 === "rotate") { s2 = ["ringS", "summon", "rain", "homingS"][b.skill2Idx % 4]; b.skill2Idx++; }
+    if (s2 === "rotate") { s2 = ["ringS", "summon", "rain", "homingS", "spiral", "walls"][b.skill2Idx % 6]; b.skill2Idx++; }
     if (s2 === "rain") {
       b.skillT = 2.6 * s2haste;
       // 天降火雨：顶部随机位置直落弹
@@ -2276,6 +2276,49 @@ function updateBoss(dt) {
       Sound.warn();
     } else if (s2 === "fanS") {
       b.skillT = 2.6 * s2haste; bossFireFan(5, 235 * rageS, "#c07bff");
+    } else if (s2 === "spiral") {
+      b.skillT = 2.4 * s2haste;
+      // 螺旋弹幕：两环交错、角度随次数旋转
+      b.spiralA += 0.7;
+      for (let ring = 0; ring < 2; ring++) {
+        for (let i = 0; i < 10; i++) {
+          const a = b.spiralA + ring * 0.31 + (i / 10) * TAU;
+          ebullets.push({ x: b.x, y: b.y + b.h * 0.3, vx: Math.cos(a) * (185 + ring * 55) * rageS, vy: Math.sin(a) * (185 + ring * 55) * rageS, r: 5, color: ring ? "#ff9d3f" : "#c07bff" });
+        }
+      }
+      Sound.eshoot();
+    } else if (s2 === "walls") {
+      b.skillT = 3.2 * s2haste;
+      // 弹幕墙：顶部整排下压，留一个随机缺口
+      const gapX = rand(W * 0.2, W * 0.8);
+      for (let x = 18; x < W; x += 26) {
+        if (Math.abs(x - gapX) < 70) continue;
+        ebullets.push({ x: x, y: -12, vx: 0, vy: 165 * rageS, r: 5, color: "#ff8fb0" });
+      }
+      popup(gapX, 40, "缺口！", "#6aff9e");
+      Sound.eshoot();
+    } else if (s2 === "aimedBurst") {
+      b.skillT = 2.8 * s2haste;
+      // 锁定五连射：同一线路速度递增，形成机枪串
+      const a = Math.atan2(player.y - b.y, player.x - b.x);
+      for (let i = 0; i < 5; i++) {
+        const sp = (210 + i * 55) * rageS;
+        ebullets.push({ x: b.x, y: b.y + b.h * 0.3, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: 5, color: "#6aff9e" });
+      }
+      Sound.eshoot();
+    }
+  }
+  // ---- 狂暴第三技能：螺旋压制（血量 30% 以下持续旋转开火）----
+  if (b.state === "fight" && b.enraged) {
+    b.skill3T -= dt;
+    if (b.skill3T <= 0) {
+      b.skill3T = 0.42 / od;
+      b.spiralA += 0.55;
+      for (const da of [0, Math.PI]) {
+        const a = b.spiralA + da;
+        ebullets.push({ x: b.x, y: b.y + b.h * 0.3, vx: Math.cos(a) * 240 * rageS, vy: Math.abs(Math.sin(a)) * 200 * rageS + 80, r: 5, color: "#ff3f3f" });
+      }
+      Sound.eshoot();
     }
   }
   // 撞玩家
